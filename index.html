@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="置き時計">
 <meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>置き時計</title>
 <style>
 /* 画面の黒い点（表示しない部分）を避けて、時計・天気・カレンダーの3ブロックを自動で並べ替える。
@@ -512,6 +514,16 @@ $("bDone").addEventListener("click", () => {
   $("stage").style.visibility = "";
   relayout();
 });
+
+// Safariのタブで開いているときだけ、全画面の開き方を案内する
+if (/iPhone|iPad/.test(navigator.userAgent) && !navigator.standalone && !matchMedia("(display-mode: standalone)").matches) {
+  const n = document.createElement("div");
+  n.className = "calib-msg";
+  n.style.top = "max(12px, env(safe-area-inset-top, 0px))";
+  n.innerHTML = "いまはSafariのタブで開いています。<br>共有ボタン →「ホーム画面に追加」で「Webアプリとして開く」をオンにして追加し、<br>そのアイコンから開くと全画面になります。";
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 15000);
+}
 
 // ===== 起動 =====
 addEventListener("resize", relayout);
