@@ -82,12 +82,19 @@ body {
 .wx-text .cond { color: var(--fg); font-size: 1.12em; white-space: nowrap; }
 .wx-text .hi { color: var(--sun); } .wx-text .lo { color: var(--sat); }
 .nw { white-space: nowrap; }
+/* 天気を1つの帯にまとめる形：左に現在の天気、右に3時間ごとの予報、下に更新時刻 */
+#cWx.band { grid-template-columns: auto minmax(0, 1fr); column-gap: calc(3.5vmin * var(--s)); align-items: center; }
+#cWx.band .wxnow { flex-wrap: wrap; row-gap: calc(1vmin * var(--s)); max-width: calc(46vmin * var(--s)); }
+#cWx.band .wx-text { flex-basis: 100%; padding-left: 0; }
+#cWx.band .hours { font-size: calc(4.6vmin * var(--s)); row-gap: 0; border-top: 0; padding-top: 0; border-left: 1px solid var(--faint); padding-left: calc(2.5vmin * var(--s)); }
+#cWx.band .stamp { grid-column: 1 / -1; }
+#cWx.band .hours svg { width: calc(8vmin * var(--s)); height: calc(8vmin * var(--s)); }
 .hours {
   display: grid; grid-template-columns: repeat(5, minmax(calc(10vmin * var(--s)), 1fr));
   border-top: 1px solid var(--faint); padding-top: calc(1.6vmin * var(--s));
   font-size: calc(3.7vmin * var(--s)); color: var(--muted);
 }
-.hours > div { display: grid; justify-items: center; gap: calc(.5vmin * var(--s)); }
+.hours > div { white-space: nowrap; display: grid; justify-items: center; gap: calc(.5vmin * var(--s)); }
 .hours svg { width: calc(6.4vmin * var(--s)); height: calc(6.4vmin * var(--s)); color: var(--fg); }
 .hours .t { color: var(--fg); font-size: 1.1em; }
 .hours .p { font-size: .85em; }
@@ -206,7 +213,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08j";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08k";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -284,6 +291,24 @@ function getDot() { return store.get(dotKey()) || defaultDot(); }
 function templates(dot, box) {
   const L = [];
   if (innerWidth > innerHeight) {
+    // 3つの塊：左上に時計、左下に天気の帯、右に日付つきカレンダー（点は時計と天気のあいだに収める）
+    if (dot && box) {
+      const left = dot.x < (box.l + box.r) / 2;
+      const pref = {
+        cClock: [[left ? "start" : "end", "last baseline"], [left ? "start" : "end", "start"], ...ALIGNS],
+        cDate: [["end","last baseline"], ["end","end"], ...ALIGNS],
+        cWx: [["stretch","end"], ["start","end"], ...ALIGNS],
+        cCal: [["stretch","end"], ["end","end"], ...ALIGNS]
+      };
+      for (const ratio of ["minmax(0,1.25fr) minmax(0,1fr)", "minmax(0,1.4fr) minmax(0,1fr)", "minmax(0,1.1fr) minmax(0,1fr)"]) {
+        const [a, b] = ratio.split(" ");
+        L.push(left ? {
+          areas: `"clock date" ". cal" "wx cal"`, cols: ratio, rows: "auto minmax(0,1fr) auto", band: true, pref
+        } : {
+          areas: `"date clock" "cal ." "cal wx"`, cols: `${b} ${a}`, rows: "auto minmax(0,1fr) auto", band: true, pref
+        });
+      }
+    }
     // 点（と飾り）の幅だけ空き列を作り、その横に現在の天気、下に予報を横長に置く
     if (dot && box) {
       const Rh = (haloOn() ? dot.r * HALO : dot.r + DOT_MARGIN) + 8;
@@ -368,7 +393,8 @@ function rectOf(el) {
 // 重なり・はみ出しの点数（0なら合格）
 function cellScore(id, dot, box) {
   let score = 0;
-  const R = dot ? (haloOn() ? dot.r * HALO + 2 : dot.r + DOT_MARGIN) + SHIFT : 0;
+  // 飾りの外側の淡い光（外径の端）には文字が少しかかってもよい
+  const R = dot ? (haloOn() ? dot.r * 1.4 : dot.r + DOT_MARGIN) + SHIFT : 0;
   for (const el of items(id)) {
     const b = rectOf(el);
     if (!b.width || !b.height) continue;
@@ -420,6 +446,7 @@ function applyTemplate(t) {
   const target = t.split ? $("cHrs") : $("cWx");
   if ($("hours").parentNode !== target) { target.appendChild($("hours")); target.appendChild($("stampBox")); }
   $("cHrs").hidden = !t.split;
+  $("cWx").classList.toggle("band", !!t.band);
 }
 const prefOf = (t, id) => (t.pref && t.pref[id]) || PREF[id];
 function setAlign(id, a) { const s = $(id).style; s.justifySelf = a[0]; s.alignSelf = a[1]; }
@@ -453,7 +480,7 @@ function grow(t, dot, box) {
   for (let pass = 0; pass < 30; pass++) {
     let changed = false;
     for (const id of ["cClock", "cCal", "cDate", "cWx", "cHrs"]) {
-      if (t.split && id === "cDate") continue;   // 日付は最後に列の幅ぴったりに合わせる
+      if ((t.split || t.band) && id === "cDate") continue;   // 日付は最後に列の幅ぴったりに合わせる
       if ($(id).hidden || F[id] >= CAP[id]) continue;
       const v = +(F[id] + 0.05).toFixed(2);
       setF(id, v);
@@ -464,7 +491,7 @@ function grow(t, dot, box) {
     if (!changed) break;
   }
   // 日付の文字を列の幅ぴったりにする（上の時計・下のカレンダーと左右の端をそろえる）
-  if (t.split) {
+  if (t.split || t.band) {
     const cw = $("grid").getBoundingClientRect().width, w = $("date").getBoundingClientRect().width;   // カレンダーの幅に合わせる
     if (cw && w) {
       let f = Math.min(1.8, F.cDate * cw / w * 0.998);
@@ -476,6 +503,14 @@ function grow(t, dot, box) {
       }
       setF("cDate", F.cDate);
     }
+    // 日付を大きくしきれなかったときは、カレンダーの幅を日付に合わせて左右の端をそろえる
+    const db = $("date").getBoundingClientRect(), gb = $("grid").getBoundingClientRect();
+    if (Math.abs(db.left - gb.left) > 2) {
+      // カレンダーの左側に余白を入れて、左端を日付にそろえる（右端はもともと同じ）
+      $("cCal").style.marginLeft = Math.max(0, db.left - gb.left) + "px";
+      const r = evaluate(t, dot, box);
+      if (r.total === 0) last = r; else $("cCal").style.marginLeft = "";
+    }
   }
   for (const id in last.aligns) setAlign(id, last.aligns[id]);
   return last;
@@ -483,6 +518,7 @@ function grow(t, dot, box) {
 function doLayout() {
   setInsets();
   for (const id in CELLS) $(id).style.removeProperty("--f");
+  $("cCal").style.marginLeft = "";
   const stage = $("stage");
   stage.classList.remove("shift");
   stage.style.transform = "none";
