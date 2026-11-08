@@ -26,6 +26,8 @@
   /* 天気マークの色：晴れ＝橙、月＝淡い黄、くもり＝灰、雨＝青、雪＝水色、霧＝薄灰、雷＝黄 */
   --wx-sun: #f5a33b; --wx-moon: #e8d9a0; --wx-cloud: #aab4c0; --wx-rain: #4ea3f2;
   --wx-snow: #bfe6ff; --wx-fog: #8d97a3; --wx-bolt: #ffd23f;
+  /* 気温の色：0℃未満→5℃ごと→35℃以上（寒い＝青、暖かい＝黄、暑い＝赤） */
+  --t0: #9bb8ff; --t1: #6ec6ff; --t2: #5fd6c6; --t3: #8ed86c; --t4: #dcd75c; --t5: #f5b041; --t6: #f5823c; --t7: #f0564a; --t8: #e652a6;
   --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
   --g: 1;                 /* 全体の縮尺（はみ出すときに自動で下げる） */
   --s: var(--g);
@@ -37,6 +39,7 @@ body.night {
   /* 夜は眩しくないよう暗めにする（色の違いは残す） */
   --wx-sun: #a8683a; --wx-moon: #9a8a5c; --wx-cloud: #74695f; --wx-rain: #4f6f92;
   --wx-snow: #8296a6; --wx-fog: #5e5650; --wx-bolt: #a68c3a;
+  --t0: #5e6a8a; --t1: #4f7184; --t2: #4d7a72; --t3: #62784e; --t4: #857f46; --t5: #9a7038; --t6: #9c5a34; --t7: #984038; --t8: #8f3f6c;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -222,7 +225,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08n";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08o";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -665,6 +668,8 @@ function wxInfo(code) {
   if (code >= 95) return ["雷雨", "thunder"];
   return ["―", "cloud"];
 }
+// 気温 → 色（0℃未満、0〜4、5〜9、10〜14、15〜19、20〜24、25〜29、30〜34、35以上）
+const tcol = v => `var(--t${v < 0 ? 0 : Math.min(8, Math.floor(v / 5) + 1)})`;
 // 天気の種類 → 文字に使う色
 const WX_COLOR = { sun: "sun", partly: "sun", cloud: "cloud", fog: "fog", rain: "rain", snow: "snow", thunder: "bolt" };
 function icon(kind, night) {
@@ -700,17 +705,17 @@ async function loadWeather() {
     $("wxIcon").innerHTML = icon(kind, c.is_day === 0);
     const wc = kind === "sun" && c.is_day === 0 ? "moon" : (WX_COLOR[kind] || "cloud");   // 夜の晴れは月の色
     $("wxTemp").innerHTML = `${Math.round(c.temperature_2m)}<small>℃</small>`;
-    $("wxTemp").style.color = `var(--wx-${wc})`;   // 気温の数字も天気の色にそろえる
+    $("wxTemp").style.color = tcol(Math.round(c.temperature_2m));   // 気温の数字は温度で色を変える
     $("wxCond").innerHTML = `${PLACE.name} <span style="color:var(--wx-${wc})">${label}</span>`;
     $("wxSub").innerHTML =
-      `<span class="nw">最高 <span class="hi">${Math.round(dl.temperature_2m_max[0])}°</span>　最低 <span class="lo">${Math.round(dl.temperature_2m_min[0])}°</span></span><br><span class="nw">降水確率 ${dl.precipitation_probability_max[0] ?? "-"}%</span>`;
+      `<span class="nw">最高 <span style="color:${tcol(Math.round(dl.temperature_2m_max[0]))}">${Math.round(dl.temperature_2m_max[0])}°</span>　最低 <span style="color:${tcol(Math.round(dl.temperature_2m_min[0]))}">${Math.round(dl.temperature_2m_min[0])}°</span></span><br><span class="nw">降水確率 ${dl.precipitation_probability_max[0] ?? "-"}%</span>`;
     const nowH = new Date(); nowH.setMinutes(0, 0, 0);
     const idx0 = w.hourly.time.findIndex(t => new Date(t) >= nowH);
     let hs = "";
     for (let k = 1; k <= 5 && idx0 >= 0; k++) {
       const i = idx0 + k * 3; if (i >= w.hourly.time.length) break;
       const [, hk] = wxInfo(w.hourly.weather_code[i]);
-      hs += `<div><span>${new Date(w.hourly.time[i]).getHours()}時</span>${icon(hk, w.hourly.is_day[i] === 0)}<span class="t">${Math.round(w.hourly.temperature_2m[i])}°</span><span class="p">${w.hourly.precipitation_probability[i] ?? "-"}%</span></div>`;
+      hs += `<div><span>${new Date(w.hourly.time[i]).getHours()}時</span>${icon(hk, w.hourly.is_day[i] === 0)}<span class="t" style="color:${tcol(Math.round(w.hourly.temperature_2m[i]))}">${Math.round(w.hourly.temperature_2m[i])}°</span><span class="p">${w.hourly.precipitation_probability[i] ?? "-"}%</span></div>`;
     }
     $("hours").innerHTML = hs;
     const u = new Date();
