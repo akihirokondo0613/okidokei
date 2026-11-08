@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="置き時計">
+<meta name="theme-color" content="#0b0d10">
+<title>置き時計</title>
+<style>
+/* 横向きのiPhoneで左に時計と天気、右に月のカレンダー。縦向きは上下に積む。
+   有機ELの焼き付き対策として黒背景・文字は真っ白にしない・1分ごとに数pxずらす。 */
+:root {
+  --bg: #000;
+  --fg: #d9dde3;
+  --muted: #7d8590;
+  --faint: #2a2f36;
+  --accent: #f0b35a;   /* 今日・現在の気温 */
+  --sun: #e8786f;      /* 日曜・祝日 */
+  --sat: #6fa3e8;      /* 土曜 */
+  --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  color-scheme: dark;
+}
+/* 夜（22時〜6時）は暗く、暖色に寄せる */
+body.night {
+  --fg: #a8574a;
+  --muted: #6b3a33;
+  --faint: #24130f;
+  --accent: #c0644f;
+  --sun: #a8574a;
+  --sat: #7a4a44;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 2s;
+}
+.stage {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 4vw;
+  align-items: center;
+  padding-block: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-bottom));
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+  transition: transform 3s ease;
+}
+.left { display: grid; gap: 1.2vh; min-width: 0; }
+.date { font-size: clamp(16px, 5.2vh, 26px); color: var(--muted); letter-spacing: .04em; }
+.date b { color: var(--fg); font-weight: 600; }
+.clock {
+  font-size: clamp(64px, 34vh, 200px);
+  font-weight: 200;
+  line-height: .95;
+  letter-spacing: -.02em;
+  display: flex; align-items: baseline; gap: .06em;
+}
+.clock .sec { font-size: .22em; color: var(--muted); font-weight: 300; margin-left: .15em; }
+.colon { opacity: .55; margin: 0 -.04em; }
+
+.wx { display: flex; align-items: center; gap: 3vh; margin-top: 1vh; }
+.wx svg { width: clamp(40px, 13vh, 72px); height: clamp(40px, 13vh, 72px); flex: none; }
+.wx-temp { font-size: clamp(30px, 12vh, 64px); font-weight: 300; color: var(--accent); line-height: 1; }
+.wx-temp small { font-size: .45em; color: var(--muted); }
+.wx-text { display: grid; gap: .4vh; font-size: clamp(12px, 4vh, 18px); color: var(--muted); min-width: 0; }
+.wx-text .cond { color: var(--fg); font-size: 1.1em; }
+.nw { white-space: nowrap; display: inline-block; }
+.hours { display: flex; gap: 2.4vw; margin-top: 1vh; font-size: clamp(11px, 3.4vh, 15px); color: var(--muted); }
+.hours div { display: grid; justify-items: center; gap: .3vh; }
+.hours svg { width: clamp(18px, 6vh, 28px); height: clamp(18px, 6vh, 28px); }
+.hours .t { color: var(--fg); }
+.hours .p { font-size: .85em; }
+.stamp { font-size: 11px; color: var(--faint); margin-top: .6vh; }
+body.night .stamp { color: var(--muted); }
+
+.cal { min-width: 0; }
+.cal-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.4vh; }
+.cal-head .m { font-size: clamp(16px, 5.6vh, 26px); font-weight: 600; }
+.cal-head .y { font-size: clamp(11px, 3.4vh, 15px); color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: .6vh; text-align: center; }
+.grid .dow { font-size: clamp(10px, 3vh, 13px); color: var(--muted); padding-bottom: .6vh; }
+.grid .d { font-size: clamp(12px, 4.4vh, 20px); line-height: 1; padding: 1.1vh 0; border-radius: 999px; }
+.grid .out { visibility: hidden; }
+.grid .sun, .grid .hol { color: var(--sun); }
+.grid .sat { color: var(--sat); }
+.grid .today { background: var(--accent); color: var(--bg); font-weight: 700; }
+.holiday { margin-top: 1.6vh; font-size: clamp(11px, 3.4vh, 15px); color: var(--muted); min-height: 1.4em; }
+.holiday b { color: var(--fg); font-weight: 500; }
+
+.hint {
+  position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  font-size: 12px; color: var(--muted); background: #111; padding: 6px 12px; border-radius: 999px;
+  transition: opacity 1s;
+}
+.hint.gone { opacity: 0; pointer-events: none; }
+
+@media (orientation: portrait) {
+  .stage { grid-template-columns: minmax(0, 1fr); align-content: center; gap: 5vh; }
+  .clock { font-size: clamp(64px, 24vw, 140px); }
+  .date, .wx-text, .cal-head .m { font-size: 18px; }
+  .wx svg { width: 56px; height: 56px; }
+  .wx-temp { font-size: 48px; }
+  .hours { font-size: 14px; gap: 5vw; }
+  .hours svg { width: 24px; height: 24px; }
+  .grid .d { font-size: 17px; padding: 8px 0; }
+  .grid .dow, .holiday, .cal-head .y { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .stage { transition: none; } }
+</style>
+</head>
+<body>
+<main class="stage" id="stage">
+  <section class="left">
+    <div class="date" id="date"></div>
+    <div class="clock" id="clock" aria-live="off"></div>
+    <div class="wx">
+      <span id="wxIcon"></span>
+      <div class="wx-temp" id="wxTemp">--<small>℃</small></div>
+      <div class="wx-text">
+        <span class="cond" id="wxCond">天気を取得中</span>
+        <span id="wxSub"></span>
+      </div>
+    </div>
+    <div class="hours" id="hours"></div>
+    <div class="stamp" id="stamp"></div>
+  </section>
+  <section class="cal">
+    <div class="cal-head"><span class="m" id="calM"></span><span class="y" id="calY"></span></div>
+    <div class="grid" id="grid"></div>
+    <div class="holiday" id="holiday"></div>
+  </section>
+</main>
+<div class="hint" id="hint">画面をタップすると、表示したまま画面が消えにくくなります</div>
+
+<script>
+// ===== 設定（場所を変えるときはここだけ直す） =====
+const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
+const NIGHT_FROM = 22, NIGHT_TO = 6;      // 夜モードの時間帯
+const WEATHER_EVERY_MIN = 15;             // 天気の更新間隔（分）
+
+// 祝日：取得できないときの控え（2026・2027年）。ネットに繋がれば最新を取り直す
+let HOLIDAYS = {
+  "2026-01-01":"元日","2026-01-12":"成人の日","2026-02-11":"建国記念の日","2026-02-23":"天皇誕生日",
+  "2026-03-20":"春分の日","2026-04-29":"昭和の日","2026-05-03":"憲法記念日","2026-05-04":"みどりの日",
+  "2026-05-05":"こどもの日","2026-05-06":"休日","2026-07-20":"海の日","2026-08-11":"山の日",
+  "2026-09-21":"敬老の日","2026-09-22":"休日","2026-09-23":"秋分の日","2026-10-12":"スポーツの日",
+  "2026-11-03":"文化の日","2026-11-23":"勤労感謝の日",
+  "2027-01-01":"元日","2027-01-11":"成人の日","2027-02-11":"建国記念の日","2027-02-23":"天皇誕生日",
+  "2027-03-21":"春分の日","2027-03-22":"休日","2027-04-29":"昭和の日","2027-05-03":"憲法記念日",
+  "2027-05-04":"みどりの日","2027-05-05":"こどもの日","2027-07-19":"海の日","2027-08-11":"山の日",
+  "2027-09-20":"敬老の日","2027-09-23":"秋分の日","2027-10-11":"スポーツの日","2027-11-03":"文化の日",
+  "2027-11-23":"勤労感謝の日"
+};
+
+const $ = id => document.getElementById(id);
+const DOW = ["日","月","火","水","木","金","土"];
+const pad = n => String(n).padStart(2, "0");
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+// ===== 時計 =====
+let lastMinute = -1, lastDay = "";
+function tick() {
+  const now = new Date();
+  $("clock").innerHTML =
+    `<span>${now.getHours()}</span><span class="colon">:</span><span>${pad(now.getMinutes())}</span><span class="sec">${pad(now.getSeconds())}</span>`;
+  if (now.getMinutes() !== lastMinute) {
+    lastMinute = now.getMinutes();
+    onMinute(now);
+  }
+  setTimeout(tick, 1000 - now.getMilliseconds() + 5);
+}
+function reiwa(y) { return y >= 2019 ? `令和${y - 2018}年` : ""; }
+function onMinute(now) {
+  const key = ymd(now);
+  const hol = HOLIDAYS[key];
+  $("date").innerHTML = `${now.getMonth()+1}月${now.getDate()}日 <b>${DOW[now.getDay()]}曜日</b>${hol ? `　${hol}` : ""}`;
+  const h = now.getHours();
+  document.body.classList.toggle("night", h >= NIGHT_FROM || h < NIGHT_TO);
+  // 焼き付き対策：表示全体を数pxずらす
+  const dx = Math.round(Math.random()*12 - 6), dy = Math.round(Math.random()*8 - 4);
+  $("stage").style.transform = `translate(${dx}px, ${dy}px)`;
+  if (key !== lastDay) { lastDay = key; renderCalendar(now); }
+}
+
+// ===== カレンダー =====
+function renderCalendar(now) {
+  const y = now.getFullYear(), m = now.getMonth();
+  $("calM").textContent = `${m+1}月`;
+  $("calY").textContent = `${y}年（${reiwa(y)}）`;
+  const first = new Date(y, m, 1), days = new Date(y, m+1, 0).getDate();
+  let html = DOW.map((w,i) => `<div class="dow ${i===0?"sun":i===6?"sat":""}">${w}</div>`).join("");
+  for (let i = 0; i < first.getDay(); i++) html += `<div class="d out">0</div>`;
+  for (let d = 1; d <= days; d++) {
+    const dt = new Date(y, m, d), wd = dt.getDay(), k = ymd(dt);
+    const cls = ["d"];
+    if (wd === 0) cls.push("sun"); if (wd === 6) cls.push("sat");
+    if (HOLIDAYS[k]) cls.push("hol");
+    if (d === now.getDate()) cls.push("today");
+    html += `<div class="${cls.join(" ")}"${HOLIDAYS[k] ? ` title="${HOLIDAYS[k]}"` : ""}>${d}</div>`;
+  }
+  $("grid").innerHTML = html;
+  // 次の祝日
+  const today = ymd(now);
+  const next = Object.keys(HOLIDAYS).sort().find(k => k > today);
+  if (next) {
+    const nd = new Date(next + "T00:00:00");
+    const diff = Math.round((nd - new Date(y, m, now.getDate())) / 86400000);
+    $("holiday").innerHTML = `次の祝日　<b>${nd.getMonth()+1}/${nd.getDate()}（${DOW[nd.getDay()]}）${HOLIDAYS[next]}</b>　あと${diff}日`;
+  } else {
+    $("holiday").textContent = "";
+  }
+}
+async function loadHolidays() {
+  try {
+    const r = await fetch("https://holidays-jp.github.io/api/v1/date.json", { cache: "no-cache" });
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    HOLIDAYS = Object.assign({}, HOLIDAYS, data);
+    lastDay = ""; onMinute(new Date());
+  } catch (e) { /* 控えの祝日で表示を続ける */ }
+}
+
+// ===== 天気（Open-Meteo・登録不要） =====
+function wxInfo(code) {
+  if (code === 0) return ["快晴", "sun"];
+  if (code === 1) return ["晴れ", "sun"];
+  if (code === 2) return ["晴れ時々くもり", "partly"];
+  if (code === 3) return ["くもり", "cloud"];
+  if (code === 45 || code === 48) return ["霧", "fog"];
+  if (code >= 51 && code <= 57) return ["霧雨", "rain"];
+  if (code >= 61 && code <= 67) return [code >= 65 ? "強い雨" : "雨", "rain"];
+  if (code >= 71 && code <= 77) return [code >= 75 ? "大雪" : "雪", "snow"];
+  if (code >= 80 && code <= 82) return ["にわか雨", "rain"];
+  if (code === 85 || code === 86) return ["にわか雪", "snow"];
+  if (code >= 95) return ["雷雨", "thunder"];
+  return ["―", "cloud"];
+}
+function icon(kind, night) {
+  const s = `fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  const sun = night
+    ? `<path d="M30 10a14 14 0 1 0 14 18A11 11 0 0 1 30 10z" ${s}/>`
+    : `<circle cx="32" cy="24" r="9" ${s}/><g ${s}><path d="M32 6v4M32 38v4M14 24h4M46 24h4M19 11l3 3M42 34l3 3M45 11l-3 3M22 34l-3 3"/></g>`;
+  const cloud = `<path d="M18 46h28a9 9 0 0 0 0-18 13 13 0 0 0-25-2 10 10 0 0 0-3 20z" ${s}/>`;
+  const map = {
+    sun: sun,
+    partly: `<g transform="translate(-6,-6) scale(.8)">${sun}</g>${cloud}`,
+    cloud: cloud,
+    fog: `<g ${s}><path d="M12 24h40M8 32h44M14 40h36M18 48h28"/></g>`,
+    rain: `${cloud.replace("46h28","40h28").replace("0 0 3 20z","0 0 3 14z")}<g ${s}><path d="M24 48l-2 6M33 48l-2 6M42 48l-2 6"/></g>`,
+    snow: `${cloud.replace("46h28","40h28").replace("0 0 3 20z","0 0 3 14z")}<g ${s}><path d="M24 50v4M22 52h4M34 50v4M32 52h4M44 50v4M42 52h4"/></g>`,
+    thunder: `${cloud.replace("46h28","40h28").replace("0 0 3 20z","0 0 3 14z")}<path d="M34 42l-5 8h6l-4 8" ${s}/>`
+  };
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">${map[kind] || cloud}</svg>`;
+}
+async function loadWeather() {
+  const url = "https://api.open-meteo.com/v1/forecast"
+    + `?latitude=${PLACE.lat}&longitude=${PLACE.lon}`
+    + "&current=temperature_2m,weather_code,relative_humidity_2m,is_day"
+    + "&hourly=temperature_2m,weather_code,precipitation_probability,is_day"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + "&timezone=Asia%2FTokyo&forecast_days=2";
+  try {
+    const r = await fetch(url, { cache: "no-cache" });
+    if (!r.ok) throw new Error(r.status);
+    const w = await r.json();
+    const c = w.current, dl = w.daily;
+    const [label, kind] = wxInfo(c.weather_code);
+    $("wxIcon").innerHTML = icon(kind, c.is_day === 0);
+    $("wxTemp").innerHTML = `${Math.round(c.temperature_2m)}<small>℃</small>`;
+    $("wxCond").textContent = `${PLACE.name}　${label}`;
+    $("wxSub").innerHTML =
+      `<span class="nw">最高 ${Math.round(dl.temperature_2m_max[0])}℃ / 最低 ${Math.round(dl.temperature_2m_min[0])}℃</span>　<span class="nw">降水 ${dl.precipitation_probability_max[0] ?? "-"}%</span>`;
+    // この先3時間ごと×5
+    const nowH = new Date(); nowH.setMinutes(0,0,0);
+    const idx0 = w.hourly.time.findIndex(t => new Date(t) >= nowH);
+    let hs = "";
+    for (let k = 1; k <= 5 && idx0 >= 0; k++) {
+      const i = idx0 + k*3; if (i >= w.hourly.time.length) break;
+      const t = new Date(w.hourly.time[i]);
+      const [, hk] = wxInfo(w.hourly.weather_code[i]);
+      hs += `<div><span>${t.getHours()}時</span>${icon(hk, w.hourly.is_day[i] === 0)}<span class="t">${Math.round(w.hourly.temperature_2m[i])}°</span><span class="p">${w.hourly.precipitation_probability[i] ?? "-"}%</span></div>`;
+    }
+    $("hours").innerHTML = hs;
+    const u = new Date();
+    $("stamp").textContent = `天気 ${u.getHours()}:${pad(u.getMinutes())} 更新（Open-Meteo）`;
+  } catch (e) {
+    $("stamp").textContent = "天気を取得できませんでした。1分後にもう一度試します";
+    setTimeout(loadWeather, 60000);
+  }
+}
+
+// ===== 画面を消さない（Wake Lock。対応しない環境では何もしない） =====
+let lock = null;
+async function keepAwake() {
+  try {
+    if ("wakeLock" in navigator && !lock) {
+      lock = await navigator.wakeLock.request("screen");
+      lock.addEventListener("release", () => { lock = null; });
+    }
+  } catch (e) { lock = null; }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") { keepAwake(); loadWeather(); lastDay = ""; onMinute(new Date()); }
+});
+document.addEventListener("click", () => {
+  keepAwake();
+  $("hint").classList.add("gone");
+});
+setTimeout(() => $("hint").classList.add("gone"), 8000);
+
+tick();
+loadHolidays();
+loadWeather();
+keepAwake();
+setInterval(loadWeather, WEATHER_EVERY_MIN * 60000);
+setInterval(loadHolidays, 24 * 3600000);
+</script>
+</body>
+</html>
