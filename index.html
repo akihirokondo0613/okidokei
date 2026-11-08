@@ -55,12 +55,15 @@ body {
 .stage.shift { transition: transform 3s ease; }
 .cell { min-width: 0; min-height: 0; display: grid; gap: calc(1.2vmin * var(--s)); align-content: start; }
 #cClock { grid-area: clock; }
+#cDate { grid-area: date; }
 #cWx { grid-area: wx; }
 #cCal { grid-area: cal; }
 
-.date { font-size: calc(5.6vmin * var(--s)); color: var(--muted); letter-spacing: .04em; white-space: nowrap; }
-.date b { color: var(--fg); font-weight: 700; }
+.date { font-size: calc(9.5vmin * var(--s)); color: var(--fg); font-weight: 700; letter-spacing: .02em; white-space: nowrap; line-height: 1.1; }
+.date b { color: var(--accent); font-weight: 700; }
 .clock { font-size: calc(33vmin * var(--s)); font-weight: 500; line-height: .9; letter-spacing: -.02em; white-space: nowrap; }
+/* 測る範囲を行の高さにそろえる（文字の上下の余白で「はみ出し」と誤判定しない） */
+#date, .clock > span { display: inline-block; }
 .clock .sec { font-size: .22em; color: var(--muted); font-weight: 600; margin-left: .12em; }
 .colon { opacity: .7; }
 
@@ -120,8 +123,10 @@ body {
 </head>
 <body>
 <main class="stage" id="stage">
-  <section class="cell" id="cClock">
+  <section class="cell" id="cDate">
     <div class="date"><span id="date"></span></div>
+  </section>
+  <section class="cell" id="cClock">
     <div class="clock" id="clock"></div>
   </section>
   <section class="cell" id="cWx">
@@ -225,26 +230,28 @@ function getDot() { return store.get(dotKey()) || defaultDot(); }
 function templates() {
   const L = [];
   if (innerWidth > innerHeight) {
-    for (const calRight of [true, false]) for (const clockTop of [true, false]) {
-      const col = clockTop ? ["clock", "wx"] : ["wx", "clock"];
-      L.push({
-        areas: calRight ? `"${col[0]} cal" "${col[1]} cal"` : `"cal ${col[0]}" "cal ${col[1]}"`,
-        cols: calRight ? "minmax(0,1.3fr) minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1.3fr)",
-        rows: clockTop ? "auto minmax(0,1fr)" : "minmax(0,1fr) auto"
-      });
-    }
-    for (const clockTop of [true, false]) for (const wxLeft of [true, false]) {
+    // 上段に時計と日付を横並び、下段に天気とカレンダー（横向きの基本形）
+    for (const topFirst of [true, false]) for (const clockLeft of [true, false]) for (const wxLeft of [true, false]) {
+      const top = clockLeft ? "clock date" : "date clock";
       const bottom = wxLeft ? "wx cal" : "cal wx";
       L.push({
-        areas: clockTop ? `"clock clock" "${bottom}"` : `"${bottom}" "clock clock"`,
-        cols: "minmax(0,1fr) minmax(0,1fr)",
-        rows: clockTop ? "auto minmax(0,1fr)" : "minmax(0,1fr) auto"
+        areas: topFirst ? `"${top}" "${bottom}"` : `"${bottom}" "${top}"`,
+        cols: clockLeft === wxLeft ? "minmax(0,1.15fr) minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1.15fr)",
+        rows: topFirst ? "auto minmax(0,1fr)" : "minmax(0,1fr) auto"
+      });
+    }
+    // カレンダーを縦一列に置き、反対側に日付・時計・天気を積む
+    for (const calRight of [true, false]) for (const order of [["date","clock","wx"], ["wx","date","clock"]]) {
+      L.push({
+        areas: order.map(a => calRight ? `"${a} cal"` : `"cal ${a}"`).join(" "),
+        cols: calRight ? "minmax(0,1.3fr) minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1.3fr)",
+        rows: order[2] === "wx" ? "auto auto minmax(0,1fr)" : "minmax(0,1fr) auto auto"
       });
     }
   } else {
-    const perms = [["clock","wx","cal"],["wx","clock","cal"],["clock","cal","wx"],["cal","clock","wx"],["wx","cal","clock"],["cal","wx","clock"]];
+    const perms = [["T","wx","cal"],["wx","T","cal"],["T","cal","wx"],["cal","T","wx"],["wx","cal","T"],["cal","wx","T"]];
     for (const p of perms) for (const ac of ["space-evenly", "start", "end", "space-between", "center"]) {
-      L.push({ areas: p.map(a => `"${a}"`).join(" "), cols: "minmax(0,1fr)", rows: "auto auto auto", alignContent: ac });
+      L.push({ areas: p.map(a => a === "T" ? `"date" "clock"` : `"${a}"`).join(" "), cols: "minmax(0,1fr)", rows: "auto auto auto auto", alignContent: ac });
     }
   }
   return L;
@@ -252,7 +259,8 @@ function templates() {
 const ALIGNS = [["center","center"],["start","start"],["end","end"],["start","end"],["end","start"],
                 ["center","start"],["center","end"],["start","center"],["end","center"]];
 const CELLS = {
-  cClock: "#date, #clock > span",
+  cDate: "#date",
+  cClock: "#clock > span",
   cWx: "#wxIcon svg, #wxTemp, #wxCond, #wxSub .nw, #hours > div, #stamp",
   cCal: "#calM, #calY, #grid > div:not(.out), #holiday"
 };
@@ -264,7 +272,8 @@ function cellScore(id, dot, box) {
   for (const el of document.querySelectorAll(CELLS[id])) {
     const b = el.getBoundingClientRect();
     if (!b.width || !b.height) continue;
-    if (b.left < box.l - 1 || b.top < box.t - 1 || b.right > box.r + 1 || b.bottom > box.b + 1) {
+    const T = 4;   // 余白への数pxのはみ出しは許す（焼き付き対策の移動幅と同じ程度）
+    if (b.left < box.l - T || b.top < box.t - T || b.right > box.r + T || b.bottom > box.b + T) {
       score += 10000 + Math.max(0, box.l - b.left) + Math.max(0, box.t - b.top) + Math.max(0, b.right - box.r) + Math.max(0, b.bottom - box.b);
     }
     if (dot) {
@@ -275,6 +284,26 @@ function cellScore(id, dot, box) {
     }
   }
   return score;
+}
+// ブロック（時計・日付・天気・カレンダー）同士が重なっていないか
+function cellsOverlap() {
+  const rects = Object.keys(CELLS).map(id => {
+    let u = null;
+    for (const el of document.querySelectorAll(CELLS[id])) {
+      const b = el.getBoundingClientRect();
+      if (!b.width || !b.height) continue;
+      u = u ? { l: Math.min(u.l, b.left), t: Math.min(u.t, b.top), r: Math.max(u.r, b.right), b: Math.max(u.b, b.bottom) }
+            : { l: b.left, t: b.top, r: b.right, b: b.bottom };
+    }
+    return u;
+  }).filter(Boolean);
+  let sc = 0;
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+    const a = rects[i], b = rects[j];
+    const w = Math.min(a.r, b.r) - Math.max(a.l, b.l), h = Math.min(a.b, b.b) - Math.max(a.t, b.t);
+    if (w > 0 && h > 0) sc += 5000 + w * h;
+  }
+  return sc;
 }
 function contentBox() {
   const cs = getComputedStyle($("stage"));
@@ -316,6 +345,7 @@ function doLayout() {
         }
         setAlign(id, bestA.a); aligns[id] = bestA.a; total += bestA.sc;
       }
+      total += cellsOverlap();
       if (!best || total < best.total || (total === best.total && s > best.s)) best = { s, t, aligns, total };
       if (total === 0) return true;
     }
