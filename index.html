@@ -56,6 +56,10 @@ body {
 .cell { min-width: 0; min-height: 0; display: grid; gap: calc(1.2vmin * var(--s)); align-content: start; }
 #cClock { grid-area: clock; }
 #cDate { grid-area: date; }
+#cHrs { grid-area: hrs; min-width: 0; }
+#cHrs .hours { font-size: calc(4.2vmin * var(--s)); }
+#cHrs .hours svg { width: calc(7.4vmin * var(--s)); height: calc(7.4vmin * var(--s)); }
+[hidden] { display: none !important; }
 #cWx { grid-area: wx; }
 #cCal { grid-area: cal; }
 
@@ -98,7 +102,7 @@ body {
 .grid .sun, .grid .hol { color: var(--sun); }
 .grid .sat { color: var(--sat); }
 .grid .today { background: var(--accent); color: var(--bg); font-weight: 800; }
-.holiday { font-size: calc(3.5vmin * var(--s)); color: var(--muted); }
+.holiday { white-space: nowrap; font-size: calc(3.5vmin * var(--s)); color: var(--muted); }
 .holiday b { color: var(--fg); font-weight: 700; }
 
 /* 操作バー（画面をタップしたときだけ出す） */
@@ -168,8 +172,9 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
       <span class="wx-text"><span class="cond" id="wxCond">天気を取得中</span><span id="wxSub"></span></span>
     </div>
     <div class="hours" id="hours"></div>
-    <div class="stamp"><span id="stamp"></span></div>
+    <div class="stamp" id="stampBox"><span id="stamp"></span></div>
   </section>
+  <section class="cell" id="cHrs" hidden></section>
   <section class="cell" id="cCal">
     <div class="cal-head"><span class="m" id="calM"></span><span class="y" id="calY"></span></div>
     <div class="grid" id="grid"></div>
@@ -200,7 +205,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08g";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08h";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -263,9 +268,28 @@ function defaultDot() {
 function getDot() { return store.get(dotKey()) || defaultDot(); }
 
 // ===== 配置の候補 =====
-function templates() {
+function templates(dot, box) {
   const L = [];
   if (innerWidth > innerHeight) {
+    // 点（と飾り）の幅だけ空き列を作り、その横に現在の天気、下に予報を横長に置く
+    if (dot && box) {
+      const Rh = (haloOn() ? dot.r * HALO : dot.r + DOT_MARGIN) + 8;
+      const left = dot.x < (box.l + box.r) / 2;
+      const voidW = Math.round(left ? dot.x + Rh - box.l : box.r - (dot.x - Rh));
+      if (voidW > 40 && voidW < (box.r - box.l) * 0.45) {
+        const wxPref = { cWx: [["start","center"],["start","start"],["start","end"], ...ALIGNS] };
+        for (const ratio of ["minmax(0,1fr) minmax(0,1.1fr)", "minmax(0,1.25fr) minmax(0,1fr)", "minmax(0,1fr) minmax(0,1.35fr)"]) {
+          const [a, b] = ratio.split(" ");
+          L.push(left ? {
+            areas: `"clock clock date" ". wx cal" "hrs hrs cal"`,
+            cols: `${voidW}px ${ratio}`, rows: "auto minmax(0,1fr) auto", split: true, pref: wxPref
+          } : {
+            areas: `"date clock clock" "cal wx ." "cal hrs hrs"`,
+            cols: `${b} ${a} ${voidW}px`, rows: "auto minmax(0,1fr) auto", split: true, pref: wxPref
+          });
+        }
+      }
+    }
     // 上段に時計と日付を横並び、下段に天気とカレンダー（横向きの基本形）
     for (const topFirst of [true, false]) for (const clockLeft of [true, false]) for (const wxLeft of [true, false]) {
       const top = clockLeft ? "clock date" : "date clock";
@@ -301,20 +325,19 @@ const PREF = {
   cWx: [["start","end"],["start","start"],["start","center"], ...ALIGNS],
   // 日付とカレンダーは間を空けず寄せる（日付が上段なら下寄せ、カレンダーは上寄せ）
   cDate: [["center","end"],["center","start"],["center","center"], ...ALIGNS],
+  cHrs: [["stretch","end"],["stretch","center"],["start","end"],["start","center"],["start","start"], ...ALIGNS],
   cCal: [["center","start"],["center","end"],["center","center"], ...ALIGNS]
 };
-const CELLS = {
-  cDate: "#date",
-  cClock: "#clock > span",
-  cWx: "#wxIcon svg, #wxTemp, #wxCond, #wxSub .nw, #hours > div, #stamp",
-  cCal: "#calM, #calY, #grid > div:not(.out), #holiday"
-};
+// 測る対象（各ブロックの中だけを探す。予報は配置によって別ブロックへ移る）
+const MEASURE = "#date, #clock > span, #wxIcon svg, #wxTemp, #wxCond, #wxSub .nw, #hours > div, #stamp, #calM, #calY, #grid > div:not(.out), #holiday";
+const CELLS = { cDate: 1, cClock: 1, cWx: 1, cHrs: 1, cCal: 1 };
+const items = id => $(id).querySelectorAll(MEASURE);
 
 // 重なり・はみ出しの点数（0なら合格）
 function cellScore(id, dot, box) {
   let score = 0;
   const R = dot ? (haloOn() ? dot.r * HALO + 2 : dot.r + DOT_MARGIN) + SHIFT : 0;
-  for (const el of document.querySelectorAll(CELLS[id])) {
+  for (const el of items(id)) {
     const b = el.getBoundingClientRect();
     if (!b.width || !b.height) continue;
     const T = 4;   // 余白への数pxのはみ出しは許す（焼き付き対策の移動幅と同じ程度）
@@ -334,7 +357,7 @@ function cellScore(id, dot, box) {
 function cellsOverlap() {
   const rects = Object.keys(CELLS).map(id => {
     let u = null;
-    for (const el of document.querySelectorAll(CELLS[id])) {
+    for (const el of items(id)) {
       const b = el.getBoundingClientRect();
       if (!b.width || !b.height) continue;
       u = u ? { l: Math.min(u.l, b.left), t: Math.min(u.t, b.top), r: Math.max(u.r, b.right), b: Math.max(u.b, b.bottom) }
@@ -361,7 +384,12 @@ function applyTemplate(t) {
   const st = $("stage").style;
   st.gridTemplateAreas = t.areas; st.gridTemplateColumns = t.cols; st.gridTemplateRows = t.rows;
   st.alignContent = t.alignContent || "stretch";
+  // 予報を「天気」ブロックに入れるか、別ブロックに出すか
+  const target = t.split ? $("cHrs") : $("cWx");
+  if ($("hours").parentNode !== target) { target.appendChild($("hours")); target.appendChild($("stampBox")); }
+  $("cHrs").hidden = !t.split;
 }
+const prefOf = (t, id) => (t.pref && t.pref[id]) || PREF[id];
 function setAlign(id, a) { const s = $(id).style; s.justifySelf = a[0]; s.alignSelf = a[1]; }
 
 let layoutTimer = null;
@@ -376,13 +404,13 @@ function doLayout() {
   // 粗く探して、通った縮尺の一段上を細かく試す（できるだけ大きく表示する）
   const tryScale = s => {
     document.documentElement.style.setProperty("--s", s);
-    for (const t of templates()) {
+    for (const t of templates(dot, box)) {
       applyTemplate(t);
-      for (const id in CELLS) setAlign(id, PREF[id][0]);
+      for (const id in CELLS) setAlign(id, prefOf(t, id)[0]);
       const aligns = {}; let total = 0;
       for (const id in CELLS) {
         let bestA = null;
-        for (const a of PREF[id]) {
+        for (const a of prefOf(t, id)) {
           setAlign(id, a);
           const sc = cellScore(id, dot, box);
           if (!bestA || sc < bestA.sc) bestA = { a, sc };
