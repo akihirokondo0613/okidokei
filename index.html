@@ -213,7 +213,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08k";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08l";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -513,12 +513,23 @@ function grow(t, dot, box) {
     }
   }
   for (const id in last.aligns) setAlign(id, last.aligns[id]);
+  // 日付の上下の中心を、時刻の数字の上下の中心にそろえる（同じ段に並ぶとき）
+  if (t.split || t.band) {
+    const c = rectOf($("clock").firstElementChild), d0 = $("date").getBoundingClientRect();
+    const shift = Math.round((c.top + c.bottom) / 2 - (d0.top + d0.bottom) / 2);
+    if (shift) {
+      $("cDate").style.transform = `translateY(${shift}px)`;
+      const r = evaluate(t, dot, box);
+      if (r.total !== 0) $("cDate").style.transform = "";
+    }
+  }
   return last;
 }
 function doLayout() {
   setInsets();
   for (const id in CELLS) $(id).style.removeProperty("--f");
   $("cCal").style.marginLeft = "";
+  $("cDate").style.transform = "";
   const stage = $("stage");
   stage.classList.remove("shift");
   stage.style.transform = "none";
