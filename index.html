@@ -166,6 +166,7 @@ body {
 
 <script>
 // ===== 設定 =====
+const VERSION = "2026-11-08d";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -490,7 +491,7 @@ async function loadWeather() {
     }
     $("hours").innerHTML = hs;
     const u = new Date();
-    $("stamp").textContent = `天気 ${u.getHours()}:${pad(u.getMinutes())} 更新`;
+    $("stamp").textContent = `天気 ${u.getHours()}:${pad(u.getMinutes())} 更新　版 ${VERSION}`;
   } catch (e) {
     $("stamp").textContent = "天気を取得できませんでした（1分後に再試行）";
     setTimeout(loadWeather, 60000);
@@ -558,11 +559,21 @@ if (/iPhone|iPad/.test(navigator.userAgent) && !navigator.standalone && !matchMe
   setTimeout(() => n.remove(), 15000);
 }
 
+// ===== 新しい版が出ていたら自動で読み直す =====
+async function checkUpdate() {
+  try {
+    const r = await fetch(`version.txt?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const v = (await r.text()).trim();
+    if (v && v !== VERSION) location.replace(`./?v=${encodeURIComponent(v)}`);   // URLを変えて保存済みの古い画面を使わせない
+  } catch (e) {}
+}
+
 // ===== 起動 =====
 addEventListener("resize", relayout);
 addEventListener("orientationchange", () => setTimeout(relayout, 300));
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") { keepAwake(); loadWeather(); lastDay = ""; onMinute(new Date()); }
+  if (document.visibilityState === "visible") { checkUpdate(); keepAwake(); loadWeather(); lastDay = ""; onMinute(new Date()); }
 });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(relayout);
 
@@ -572,6 +583,8 @@ loadWeather();
 keepAwake();
 setInterval(loadWeather, WEATHER_EVERY_MIN * 60000);
 setInterval(loadHolidays, 24 * 3600000);
+setInterval(checkUpdate, 5 * 60000);
+checkUpdate();
 </script>
 </body>
 </html>
