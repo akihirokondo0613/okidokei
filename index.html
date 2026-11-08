@@ -200,7 +200,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08f";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08g";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -299,8 +299,9 @@ const LEFT_FIRST = [["start","center"],["start","start"],["start","end"]];
 const PREF = {
   cClock: [...LEFT_FIRST, ...ALIGNS],
   cWx: [["start","end"],["start","start"],["start","center"], ...ALIGNS],
-  cDate: ALIGNS,
-  cCal: [["center","center"],["center","end"],["center","start"], ...ALIGNS]
+  // 日付とカレンダーは間を空けず寄せる（日付が上段なら下寄せ、カレンダーは上寄せ）
+  cDate: [["center","end"],["center","start"],["center","center"], ...ALIGNS],
+  cCal: [["center","start"],["center","end"],["center","center"], ...ALIGNS]
 };
 const CELLS = {
   cDate: "#date",
