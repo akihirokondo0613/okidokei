@@ -66,7 +66,7 @@ body {
 
 .date { font-size: calc(9.5vmin * var(--s)); color: var(--fg); font-weight: 700; letter-spacing: .02em; white-space: nowrap; line-height: 1.1; }
 .date b { color: var(--accent); font-weight: 700; }
-.clock { font-size: calc(33vmin * var(--s)); font-weight: 500; line-height: .9; letter-spacing: -.02em; white-space: nowrap; }
+.clock { font-size: calc(33vmin * var(--s)); font-weight: 500; line-height: .9; letter-spacing: -.02em; white-space: nowrap; margin-left: -.06em; margin-right: -.03em; }
 /* 測る範囲を行の高さにそろえる（文字の上下の余白で「はみ出し」と誤判定しない） */
 #date, .clock > span { display: inline-block; }
 .clock .sec { font-size: .22em; color: var(--muted); font-weight: 600; margin-left: .12em; }
@@ -91,19 +91,19 @@ body {
 .hours svg { width: calc(6.4vmin * var(--s)); height: calc(6.4vmin * var(--s)); color: var(--fg); }
 .hours .t { color: var(--fg); font-size: 1.1em; }
 .hours .p { font-size: .85em; }
-.stamp { font-size: calc(2.8vmin * var(--s)); color: var(--faint); white-space: nowrap; }
+.stamp { font-size: calc(3.3vmin * var(--g)); line-height: 1.2; color: var(--faint); white-space: nowrap; }
 
 .cal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
 .cal-head .m { font-size: calc(6vmin * var(--s)); font-weight: 700; }
 .cal-head .y { font-size: calc(3.5vmin * var(--s)); color: var(--muted); white-space: nowrap; }
-.grid { display: grid; grid-template-columns: repeat(7, calc(9.6vmin * var(--s))); text-align: center; }
+.grid { display: grid; grid-template-columns: repeat(7, minmax(calc(9.6vmin * var(--s)), 1fr)); text-align: center; }
 .grid .dow { font-size: calc(3.3vmin * var(--s)); color: var(--muted); padding-bottom: calc(1vmin * var(--s)); }
 .grid .d { font-size: calc(4.7vmin * var(--s)); line-height: 1; padding: calc(1.5vmin * var(--s)) 0; border-radius: 999px; }
 .grid .out { visibility: hidden; }
 .grid .sun, .grid .hol { color: var(--sun); }
 .grid .sat { color: var(--sat); }
 .grid .today { background: var(--accent); color: var(--bg); font-weight: 800; }
-.holiday { white-space: nowrap; font-size: calc(3.5vmin * var(--s)); color: var(--muted); }
+.holiday { white-space: nowrap; line-height: 1.2; font-size: calc(3.3vmin * var(--g)); color: var(--muted); }
 .holiday b { color: var(--fg); font-weight: 700; }
 
 /* 操作バー（画面をタップしたときだけ出す） */
@@ -206,7 +206,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08i";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08j";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -290,7 +290,15 @@ function templates(dot, box) {
       const left = dot.x < (box.l + box.r) / 2;
       const voidW = Math.round(left ? dot.x + Rh - box.l : box.r - (dot.x - Rh));
       if (voidW > 40 && voidW < (box.r - box.l) * 0.45) {
-        const wxPref = { cWx: [["start","center"],["start","start"],["start","end"], ...ALIGNS] };
+        // 端をそろえる寄せ方を最初に試す：時計と日付は数字の下の線（ベースライン）をそろえる、
+        // 日付・カレンダー・予報は列の幅いっぱい、予報と祝日は一番下にそろえる
+        const wxPref = {
+          cWx: [["start","center"],["start","start"],["start","end"], ...ALIGNS],
+          cClock: [[left ? "start" : "end", "last baseline"], ...ALIGNS],
+          cDate: [["stretch","last baseline"], ...ALIGNS],
+          cHrs: [["stretch","end"], ...ALIGNS],
+          cCal: [["stretch","end"], ...ALIGNS]
+        };
         for (const ratio of ["minmax(0,1fr) minmax(0,1.1fr)", "minmax(0,1.25fr) minmax(0,1fr)", "minmax(0,1fr) minmax(0,1.35fr)"]) {
           const [a, b] = ratio.split(" ");
           L.push(left ? {
@@ -345,13 +353,24 @@ const PREF = {
 const MEASURE = "#date, #clock > span, #wxIcon svg, #wxTemp, #wxCond, #wxSub .nw, #hours > div, #stamp, #calM, #calY, #grid > div:not(.out), #holiday";
 const CELLS = { cDate: 1, cClock: 1, cWx: 1, cHrs: 1, cCal: 1 };
 const items = id => $(id).querySelectorAll(MEASURE);
+// 要素の見えている範囲。時計の数字は字の両脇の空きを除く（CSSで左右に寄せている分を戻す）
+function rectOf(el) {
+  const b = el.getBoundingClientRect();
+  if (el.parentNode && el.parentNode.id === "clock") {
+    const fs = parseFloat(getComputedStyle($("clock")).fontSize);
+    const first = el === $("clock").firstElementChild, lastSpan = !el.nextElementSibling;
+    // 数字の上下も、行の高さではなく字の高さで測る
+    return { left: b.left + (first ? .06 * fs : 0), right: b.right - (lastSpan ? .03 * fs : 0), top: b.top + .06 * fs, bottom: b.bottom - .08 * fs, width: b.width, height: b.height };
+  }
+  return b;
+}
 
 // 重なり・はみ出しの点数（0なら合格）
 function cellScore(id, dot, box) {
   let score = 0;
   const R = dot ? (haloOn() ? dot.r * HALO + 2 : dot.r + DOT_MARGIN) + SHIFT : 0;
   for (const el of items(id)) {
-    const b = el.getBoundingClientRect();
+    const b = rectOf(el);
     if (!b.width || !b.height) continue;
     const T = 4;   // 余白への数pxのはみ出しは許す（焼き付き対策の移動幅と同じ程度）
     if (b.left < box.l - T || b.top < box.t - T || b.right > box.r + T || b.bottom > box.b + T) {
@@ -371,7 +390,7 @@ function cellsOverlap() {
   const rects = Object.keys(CELLS).map(id => {
     let u = null;
     for (const el of items(id)) {
-      const b = el.getBoundingClientRect();
+      const b = rectOf(el);
       if (!b.width || !b.height) continue;
       u = u ? { l: Math.min(u.l, b.left), t: Math.min(u.t, b.top), r: Math.max(u.r, b.right), b: Math.max(u.b, b.bottom) }
             : { l: b.left, t: b.top, r: b.right, b: b.bottom };
@@ -434,6 +453,7 @@ function grow(t, dot, box) {
   for (let pass = 0; pass < 30; pass++) {
     let changed = false;
     for (const id of ["cClock", "cCal", "cDate", "cWx", "cHrs"]) {
+      if (t.split && id === "cDate") continue;   // 日付は最後に列の幅ぴったりに合わせる
       if ($(id).hidden || F[id] >= CAP[id]) continue;
       const v = +(F[id] + 0.05).toFixed(2);
       setF(id, v);
@@ -442,6 +462,20 @@ function grow(t, dot, box) {
       else setF(id, F[id]);
     }
     if (!changed) break;
+  }
+  // 日付の文字を列の幅ぴったりにする（上の時計・下のカレンダーと左右の端をそろえる）
+  if (t.split) {
+    const cw = $("grid").getBoundingClientRect().width, w = $("date").getBoundingClientRect().width;   // カレンダーの幅に合わせる
+    if (cw && w) {
+      let f = Math.min(1.8, F.cDate * cw / w * 0.998);
+      while (f > 0.7) {   // 幅に合わせて縮めることもある
+        setF("cDate", f);
+        const r = evaluate(t, dot, box);
+        if (r.total === 0 && JSON.stringify(r.aligns) === base) { F.cDate = f; last = r; break; }
+        f = +(f - 0.02).toFixed(3);
+      }
+      setF("cDate", F.cDate);
+    }
   }
   for (const id in last.aligns) setAlign(id, last.aligns[id]);
   return last;
