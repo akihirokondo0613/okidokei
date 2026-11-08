@@ -24,7 +24,8 @@
   --sun: #e8786f;
   --sat: #6fa3e8;
   --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
-  --s: 1;                 /* 全体の縮尺（はみ出すときに自動で下げる） */
+  --g: 1;                 /* 全体の縮尺（はみ出すときに自動で下げる） */
+  --s: var(--g);
   color-scheme: dark;
 }
 body.night {
@@ -53,7 +54,7 @@ body {
   padding-left: max(14px, var(--il, env(safe-area-inset-left, 0px)));
 }
 .stage.shift { transition: transform 3s ease; }
-.cell { min-width: 0; min-height: 0; display: grid; gap: calc(1.2vmin * var(--s)); align-content: start; }
+.cell { --s: calc(var(--g) * var(--f, 1)); min-width: 0; min-height: 0; display: grid; gap: calc(1.2vmin * var(--s)); align-content: start; }
 #cClock { grid-area: clock; }
 #cDate { grid-area: date; }
 #cHrs { grid-area: hrs; min-width: 0; }
@@ -205,7 +206,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08h";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08i";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -244,6 +245,18 @@ if (Q.get("inset")) {
   const [t, r, b, l] = Q.get("inset").split(",").map(v => v + "px");
   const st = document.documentElement.style;
   st.setProperty("--it", t); st.setProperty("--ir", r); st.setProperty("--ib", b); st.setProperty("--il", l);
+}
+
+// 横向きでは、受話口（切り欠き）のある側だけ余白を取り、反対側と上下は詰める
+function setInsets() {
+  const st = document.documentElement.style;
+  if (innerWidth <= innerHeight || Q.get("inset")) return;
+  const a = angle();
+  const notch = 34, side = 14;
+  st.setProperty("--il", (a === 90 ? notch : side) + "px");
+  st.setProperty("--ir", (a === 270 ? notch : side) + "px");
+  st.setProperty("--it", "8px");
+  st.setProperty("--ib", "10px");
 }
 
 // ===== 画面の向きと黒い点の位置 =====
@@ -394,7 +407,48 @@ function setAlign(id, a) { const s = $(id).style; s.justifySelf = a[0]; s.alignS
 
 let layoutTimer = null;
 function relayout() { clearTimeout(layoutTimer); layoutTimer = setTimeout(doLayout, 50); }
+// 今の配置で、各ブロックの寄せ方を選び直して合計点を返す
+function evaluate(t, dot, box) {
+  const aligns = {}; let total = 0;
+  for (const id in CELLS) {
+    let bestA = null;
+    for (const a of prefOf(t, id)) {
+      setAlign(id, a);
+      const sc = cellScore(id, dot, box);
+      if (!bestA || sc < bestA.sc) bestA = { a, sc };
+      if (sc === 0) break;
+    }
+    setAlign(id, bestA.a); aligns[id] = bestA.a; total += bestA.sc;
+  }
+  return { aligns, total: total + cellsOverlap() };
+}
+// 配置が決まったあと、重ならない限り各ブロックを個別に大きくする（画面いっぱいに使う）
+function grow(t, dot, box) {
+  const F = { cClock: 1, cCal: 1, cDate: 1, cWx: 1, cHrs: 1 };
+  const setF = (id, v) => $(id).style.setProperty("--f", v);
+  // 大きくしてよい上限（時計を最優先。日付や予報が時計より目立たないように）
+  const CAP = { cClock: 1.7, cCal: 1.4, cDate: 1.3, cWx: 1.35, cHrs: 1.3 };
+  let last = evaluate(t, dot, box);
+  if (last.total !== 0) return last;
+  const base = JSON.stringify(last.aligns);   // 寄せ方が変わる拡大は採らない（並びの形を崩さない）
+  for (let pass = 0; pass < 30; pass++) {
+    let changed = false;
+    for (const id of ["cClock", "cCal", "cDate", "cWx", "cHrs"]) {
+      if ($(id).hidden || F[id] >= CAP[id]) continue;
+      const v = +(F[id] + 0.05).toFixed(2);
+      setF(id, v);
+      const r = evaluate(t, dot, box);
+      if (r.total === 0 && JSON.stringify(r.aligns) === base) { F[id] = v; last = r; changed = true; }
+      else setF(id, F[id]);
+    }
+    if (!changed) break;
+  }
+  for (const id in last.aligns) setAlign(id, last.aligns[id]);
+  return last;
+}
 function doLayout() {
+  setInsets();
+  for (const id in CELLS) $(id).style.removeProperty("--f");
   const stage = $("stage");
   stage.classList.remove("shift");
   stage.style.transform = "none";
@@ -403,22 +457,11 @@ function doLayout() {
   let best = null;
   // 粗く探して、通った縮尺の一段上を細かく試す（できるだけ大きく表示する）
   const tryScale = s => {
-    document.documentElement.style.setProperty("--s", s);
+    document.documentElement.style.setProperty("--g", s);
     for (const t of templates(dot, box)) {
       applyTemplate(t);
       for (const id in CELLS) setAlign(id, prefOf(t, id)[0]);
-      const aligns = {}; let total = 0;
-      for (const id in CELLS) {
-        let bestA = null;
-        for (const a of prefOf(t, id)) {
-          setAlign(id, a);
-          const sc = cellScore(id, dot, box);
-          if (!bestA || sc < bestA.sc) bestA = { a, sc };
-          if (sc === 0) break;
-        }
-        setAlign(id, bestA.a); aligns[id] = bestA.a; total += bestA.sc;
-      }
-      total += cellsOverlap();
+      const { aligns, total } = evaluate(t, dot, box);
       if (!best || total < best.total || (total === best.total && s > best.s)) best = { s, t, aligns, total };
       if (total === 0) return true;
     }
@@ -439,9 +482,10 @@ function doLayout() {
       break;
     }
   }
-  document.documentElement.style.setProperty("--s", best.s);
+  document.documentElement.style.setProperty("--g", best.s);
   applyTemplate(best.t);
   for (const id in best.aligns) setAlign(id, best.aligns[id]);
+  grow(best.t, dot, box);
   placeHalo(dot);
   requestAnimationFrame(() => { stage.classList.add("shift"); shiftStage(); });
 }
