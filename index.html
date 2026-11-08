@@ -67,17 +67,24 @@ body {
 .clock .sec { font-size: .22em; color: var(--muted); font-weight: 600; margin-left: .12em; }
 .colon { opacity: .7; }
 
-.wxnow { display: flex; align-items: center; gap: calc(2.6vmin * var(--s)); }
-.wxnow svg { width: calc(14vmin * var(--s)); height: calc(14vmin * var(--s)); flex: none; }
+/* 天気：上段に「アイコン・気温・概況」、細い線の下に3時間ごとの予報を同じ幅で並べる */
+#cWx { width: max-content; max-width: 100%; }
+.wxnow { display: flex; align-items: center; gap: calc(2.4vmin * var(--s)); }
+.wxnow svg { width: calc(11vmin * var(--s)); height: calc(11vmin * var(--s)); flex: none; color: var(--fg); }
 .wx-temp { font-size: calc(14vmin * var(--s)); font-weight: 600; color: var(--accent); line-height: 1; white-space: nowrap; }
 .wx-temp small { font-size: .42em; color: var(--muted); }
-.wx-text { display: grid; gap: calc(.6vmin * var(--s)); font-size: calc(4.2vmin * var(--s)); color: var(--muted); }
-.wx-text .cond { color: var(--fg); font-size: 1.1em; white-space: nowrap; }
+.wx-text { display: grid; gap: calc(.8vmin * var(--s)); font-size: calc(4.2vmin * var(--s)); color: var(--muted); padding-left: calc(1vmin * var(--s)); }
+.wx-text .cond { color: var(--fg); font-size: 1.12em; white-space: nowrap; }
+.wx-text .hi { color: var(--sun); } .wx-text .lo { color: var(--sat); }
 .nw { white-space: nowrap; }
-.hours { display: flex; gap: calc(3.4vmin * var(--s)); font-size: calc(3.7vmin * var(--s)); color: var(--muted); }
+.hours {
+  display: grid; grid-template-columns: repeat(5, minmax(calc(10vmin * var(--s)), 1fr));
+  border-top: 1px solid var(--faint); padding-top: calc(1.6vmin * var(--s));
+  font-size: calc(3.7vmin * var(--s)); color: var(--muted);
+}
 .hours > div { display: grid; justify-items: center; gap: calc(.5vmin * var(--s)); }
-.hours svg { width: calc(6.4vmin * var(--s)); height: calc(6.4vmin * var(--s)); }
-.hours .t { color: var(--fg); }
+.hours svg { width: calc(6.4vmin * var(--s)); height: calc(6.4vmin * var(--s)); color: var(--fg); }
+.hours .t { color: var(--fg); font-size: 1.1em; }
 .hours .p { font-size: .85em; }
 .stamp { font-size: calc(2.8vmin * var(--s)); color: var(--faint); white-space: nowrap; }
 
@@ -193,7 +200,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08e";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08f";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -287,6 +294,14 @@ function templates() {
 }
 const ALIGNS = [["center","center"],["start","start"],["end","end"],["start","end"],["end","start"],
                 ["center","start"],["center","end"],["start","center"],["end","center"]];
+// ブロックごとに見栄えのよい寄せ方から試す（時計と天気は左端をそろえる）
+const LEFT_FIRST = [["start","center"],["start","start"],["start","end"]];
+const PREF = {
+  cClock: [...LEFT_FIRST, ...ALIGNS],
+  cWx: [["start","end"],["start","start"],["start","center"], ...ALIGNS],
+  cDate: ALIGNS,
+  cCal: [["center","center"],["center","end"],["center","start"], ...ALIGNS]
+};
 const CELLS = {
   cDate: "#date",
   cClock: "#clock > span",
@@ -362,11 +377,11 @@ function doLayout() {
     document.documentElement.style.setProperty("--s", s);
     for (const t of templates()) {
       applyTemplate(t);
-      for (const id in CELLS) setAlign(id, ALIGNS[0]);
+      for (const id in CELLS) setAlign(id, PREF[id][0]);
       const aligns = {}; let total = 0;
       for (const id in CELLS) {
         let bestA = null;
-        for (const a of ALIGNS) {
+        for (const a of PREF[id]) {
           setAlign(id, a);
           const sc = cellScore(id, dot, box);
           if (!bestA || sc < bestA.sc) bestA = { a, sc };
@@ -519,7 +534,7 @@ async function loadWeather() {
     $("wxTemp").innerHTML = `${Math.round(c.temperature_2m)}<small>℃</small>`;
     $("wxCond").textContent = `${PLACE.name} ${label}`;
     $("wxSub").innerHTML =
-      `<span class="nw">最高 ${Math.round(dl.temperature_2m_max[0])}℃ / 最低 ${Math.round(dl.temperature_2m_min[0])}℃</span><br><span class="nw">降水 ${dl.precipitation_probability_max[0] ?? "-"}%</span>`;
+      `<span class="nw">最高 <span class="hi">${Math.round(dl.temperature_2m_max[0])}°</span>　最低 <span class="lo">${Math.round(dl.temperature_2m_min[0])}°</span></span><br><span class="nw">降水確率 ${dl.precipitation_probability_max[0] ?? "-"}%</span>`;
     const nowH = new Date(); nowH.setMinutes(0, 0, 0);
     const idx0 = w.hourly.time.findIndex(t => new Date(t) >= nowH);
     let hs = "";
