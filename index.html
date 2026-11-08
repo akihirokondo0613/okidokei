@@ -222,7 +222,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08m";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08n";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -698,8 +698,9 @@ async function loadWeather() {
     const w = await r.json(), c = w.current, dl = w.daily;
     const [label, kind] = wxInfo(c.weather_code);
     $("wxIcon").innerHTML = icon(kind, c.is_day === 0);
-    $("wxTemp").innerHTML = `${Math.round(c.temperature_2m)}<small>℃</small>`;
     const wc = kind === "sun" && c.is_day === 0 ? "moon" : (WX_COLOR[kind] || "cloud");   // 夜の晴れは月の色
+    $("wxTemp").innerHTML = `${Math.round(c.temperature_2m)}<small>℃</small>`;
+    $("wxTemp").style.color = `var(--wx-${wc})`;   // 気温の数字も天気の色にそろえる
     $("wxCond").innerHTML = `${PLACE.name} <span style="color:var(--wx-${wc})">${label}</span>`;
     $("wxSub").innerHTML =
       `<span class="nw">最高 <span class="hi">${Math.round(dl.temperature_2m_max[0])}°</span>　最低 <span class="lo">${Math.round(dl.temperature_2m_min[0])}°</span></span><br><span class="nw">降水確率 ${dl.precipitation_probability_max[0] ?? "-"}%</span>`;
