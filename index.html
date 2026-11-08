@@ -113,6 +113,31 @@ body {
   position: fixed; border: 2px dashed #f0b35a; border-radius: 50%;
   pointer-events: none; z-index: 31;
 }
+/* 黒い点を「日食の太陽」に見立てる飾り。点の外側だけを淡く光らせ、ゆっくり回して焼き付きを防ぐ */
+.halo { position: fixed; pointer-events: none; z-index: 1; border-radius: 50%;
+  --h: 240, 179, 90; --ha: 1;
+  animation: breathe 14s ease-in-out infinite; }
+body.night .halo { --h: 192, 100, 79; --ha: .55; }
+.halo::before, .halo::after { content: ""; position: absolute; inset: 0; border-radius: 50%; }
+.halo::before {
+  background: radial-gradient(circle closest-side,
+    rgba(var(--h), 0) 0 61%,
+    rgba(var(--h), calc(.95 * var(--ha))) 64.5%,
+    rgba(var(--h), calc(.38 * var(--ha))) 68%,
+    rgba(var(--h), calc(.14 * var(--ha))) 80%,
+    rgba(var(--h), 0) 100%);
+}
+.halo::after {
+  background: repeating-conic-gradient(from 0deg,
+    rgba(var(--h), 0) 0deg, rgba(var(--h), calc(.32 * var(--ha))) 7deg, rgba(var(--h), 0) 16deg,
+    rgba(var(--h), 0) 26deg, rgba(var(--h), calc(.18 * var(--ha))) 31deg, rgba(var(--h), 0) 40deg);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 0 63%, #000 66%, transparent 100%);
+          mask: radial-gradient(circle closest-side, transparent 0 63%, #000 66%, transparent 100%);
+  animation: spin 300s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes breathe { 0%, 100% { opacity: .8; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .halo, .halo::after { animation: none; } }
 .calib-msg {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 32;
   font-size: 15px; color: #e6e9ee; background: #1b1f25; padding: 10px 14px; border-radius: 12px;
@@ -145,8 +170,10 @@ body {
   </section>
 </main>
 
+<div class="halo" id="halo" hidden></div>
 <div class="bar" id="bar" hidden>
   <button class="btn" id="bCalib" type="button">黒い点の位置を合わせる</button>
+  <button class="btn" id="bHalo" type="button">点の飾り：オン</button>
   <button class="btn" id="bClose" type="button">閉じる</button>
 </div>
 
@@ -166,13 +193,14 @@ body {
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08d";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08e";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
 // 黒い点の位置（縦向き・画面左上を0、幅と高さに対する割合）と半径（幅に対する割合）。写真から測った初期値
 const DOT_DEFAULT = { x: 0.564, y: 0.252, r: 0.085 };
 const DOT_MARGIN = 10;   // 点のまわりに空ける余白(px)
+const HALO = 1.55;       // 飾りの外径（点の半径の何倍か）
 const SHIFT = 3;         // 焼き付き対策で動かす幅(±px)
 
 let HOLIDAYS = {
@@ -269,7 +297,7 @@ const CELLS = {
 // 重なり・はみ出しの点数（0なら合格）
 function cellScore(id, dot, box) {
   let score = 0;
-  const R = dot ? dot.r + DOT_MARGIN + SHIFT : 0;
+  const R = dot ? (haloOn() ? dot.r * HALO + 2 : dot.r + DOT_MARGIN) + SHIFT : 0;
   for (const el of document.querySelectorAll(CELLS[id])) {
     const b = el.getBoundingClientRect();
     if (!b.width || !b.height) continue;
@@ -370,7 +398,18 @@ function doLayout() {
   document.documentElement.style.setProperty("--s", best.s);
   applyTemplate(best.t);
   for (const id in best.aligns) setAlign(id, best.aligns[id]);
+  placeHalo(dot);
   requestAnimationFrame(() => { stage.classList.add("shift"); shiftStage(); });
+}
+function haloOn() { return store.get("okidokei-halo") !== false; }
+function placeHalo(dot) {
+  const h = $("halo");
+  h.hidden = !haloOn() || !dot;
+  $("bHalo").textContent = `点の飾り：${haloOn() ? "オン" : "オフ"}`;
+  if (h.hidden) return;
+  const R = dot.r * HALO;
+  h.style.left = (dot.x - R) + "px"; h.style.top = (dot.y - R) + "px";
+  h.style.width = h.style.height = (R * 2) + "px";
 }
 function shiftStage() {
   const dx = Math.round(Math.random() * SHIFT * 2 - SHIFT), dy = Math.round(Math.random() * SHIFT * 2 - SHIFT);
@@ -518,6 +557,7 @@ function showBar() {
   barTimer = setTimeout(() => { $("bar").hidden = true; }, 8000);
 }
 $("stage").addEventListener("click", () => { keepAwake(); showBar(); });
+$("bHalo").addEventListener("click", e => { e.stopPropagation(); store.set("okidokei-halo", !haloOn()); relayout(); });
 $("bClose").addEventListener("click", e => { e.stopPropagation(); $("bar").hidden = true; });
 
 let calibDot = null;
@@ -534,6 +574,7 @@ $("bCalib").addEventListener("click", e => {
   e.stopPropagation();
   $("bar").hidden = true;
   $("stage").style.visibility = "hidden";       // 画面を真っ黒にして、点を見やすくする
+  $("halo").hidden = true;
   calibDot = Object.assign({}, getDot());
   $("calibLayer").hidden = false;
   drawRing();
