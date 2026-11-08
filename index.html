@@ -18,8 +18,8 @@
 :root {
   --bg: #000;
   --fg: #d9dde3;
-  --muted: #7d8590;
-  --faint: #3a4049;
+  --muted: #a3abb6;
+  --faint: #5c6470;
   --accent: #f0b35a;
   --sun: #e8786f;
   --sat: #6fa3e8;
@@ -28,7 +28,7 @@
   color-scheme: dark;
 }
 body.night {
-  --fg: #a8574a; --muted: #6b3a33; --faint: #4a2620;
+  --fg: #b8604f; --muted: #8a4a3f; --faint: #5e3027;
   --accent: #c0644f; --sun: #a8574a; --sat: #7a4a44;
 }
 * { box-sizing: border-box; }
@@ -37,6 +37,7 @@ body {
   background: var(--bg); color: var(--fg);
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
   overflow: hidden;
   -webkit-user-select: none; user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -58,14 +59,14 @@ body {
 #cCal { grid-area: cal; }
 
 .date { font-size: calc(5.6vmin * var(--s)); color: var(--muted); letter-spacing: .04em; white-space: nowrap; }
-.date b { color: var(--fg); font-weight: 600; }
-.clock { font-size: calc(33vmin * var(--s)); font-weight: 200; line-height: .9; letter-spacing: -.02em; white-space: nowrap; }
-.clock .sec { font-size: .22em; color: var(--muted); font-weight: 300; margin-left: .12em; }
-.colon { opacity: .55; }
+.date b { color: var(--fg); font-weight: 700; }
+.clock { font-size: calc(33vmin * var(--s)); font-weight: 500; line-height: .9; letter-spacing: -.02em; white-space: nowrap; }
+.clock .sec { font-size: .22em; color: var(--muted); font-weight: 600; margin-left: .12em; }
+.colon { opacity: .7; }
 
 .wxnow { display: flex; align-items: center; gap: calc(2.6vmin * var(--s)); }
 .wxnow svg { width: calc(14vmin * var(--s)); height: calc(14vmin * var(--s)); flex: none; }
-.wx-temp { font-size: calc(14vmin * var(--s)); font-weight: 300; color: var(--accent); line-height: 1; white-space: nowrap; }
+.wx-temp { font-size: calc(14vmin * var(--s)); font-weight: 600; color: var(--accent); line-height: 1; white-space: nowrap; }
 .wx-temp small { font-size: .42em; color: var(--muted); }
 .wx-text { display: grid; gap: calc(.6vmin * var(--s)); font-size: calc(4.2vmin * var(--s)); color: var(--muted); }
 .wx-text .cond { color: var(--fg); font-size: 1.1em; white-space: nowrap; }
@@ -78,7 +79,7 @@ body {
 .stamp { font-size: calc(2.8vmin * var(--s)); color: var(--faint); white-space: nowrap; }
 
 .cal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
-.cal-head .m { font-size: calc(6vmin * var(--s)); font-weight: 600; }
+.cal-head .m { font-size: calc(6vmin * var(--s)); font-weight: 700; }
 .cal-head .y { font-size: calc(3.5vmin * var(--s)); color: var(--muted); white-space: nowrap; }
 .grid { display: grid; grid-template-columns: repeat(7, calc(9.6vmin * var(--s))); text-align: center; }
 .grid .dow { font-size: calc(3.3vmin * var(--s)); color: var(--muted); padding-bottom: calc(1vmin * var(--s)); }
@@ -86,9 +87,9 @@ body {
 .grid .out { visibility: hidden; }
 .grid .sun, .grid .hol { color: var(--sun); }
 .grid .sat { color: var(--sat); }
-.grid .today { background: var(--accent); color: var(--bg); font-weight: 700; }
+.grid .today { background: var(--accent); color: var(--bg); font-weight: 800; }
 .holiday { font-size: calc(3.5vmin * var(--s)); color: var(--muted); }
-.holiday b { color: var(--fg); font-weight: 500; }
+.holiday b { color: var(--fg); font-weight: 700; }
 
 /* 操作バー（画面をタップしたときだけ出す） */
 .bar {
@@ -371,8 +372,10 @@ function renderCalendar(now) {
   $("calM").textContent = `${m+1}月`;
   $("calY").textContent = `${y}年（令和${y - 2018}年）`;
   const first = new Date(y, m, 1), days = new Date(y, m+1, 0).getDate();
-  let html = DOW.map((w,i) => `<div class="dow ${i===0?"sun":i===6?"sat":""}">${w}</div>`).join("");
-  for (let i = 0; i < first.getDay(); i++) html += `<div class="d out">0</div>`;
+  // 月曜始まり（月〜日）
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  let html = order.map(i => `<div class="dow ${i===0?"sun":i===6?"sat":""}">${DOW[i]}</div>`).join("");
+  for (let i = 0; i < (first.getDay() + 6) % 7; i++) html += `<div class="d out">0</div>`;
   for (let d = 1; d <= days; d++) {
     const dt = new Date(y, m, d), wd = dt.getDay(), k = ymd(dt), cls = ["d"];
     if (wd === 0) cls.push("sun"); if (wd === 6) cls.push("sat");
@@ -414,7 +417,7 @@ function wxInfo(code) {
   return ["―", "cloud"];
 }
 function icon(kind, night) {
-  const s = `fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  const s = `fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"`;
   const sun = night
     ? `<path d="M30 10a14 14 0 1 0 14 18A11 11 0 0 1 30 10z" ${s}/>`
     : `<circle cx="32" cy="24" r="9" ${s}/><g ${s}><path d="M32 6v4M32 38v4M14 24h4M46 24h4M19 11l3 3M42 34l3 3M45 11l-3 3M22 34l-3 3"/></g>`;
