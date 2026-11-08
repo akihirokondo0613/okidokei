@@ -23,6 +23,9 @@
   --accent: #f0b35a;
   --sun: #e8786f;
   --sat: #6fa3e8;
+  /* 天気マークの色：晴れ＝橙、月＝淡い黄、くもり＝灰、雨＝青、雪＝水色、霧＝薄灰、雷＝黄 */
+  --wx-sun: #f5a33b; --wx-moon: #e8d9a0; --wx-cloud: #aab4c0; --wx-rain: #4ea3f2;
+  --wx-snow: #bfe6ff; --wx-fog: #8d97a3; --wx-bolt: #ffd23f;
   --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
   --g: 1;                 /* 全体の縮尺（はみ出すときに自動で下げる） */
   --s: var(--g);
@@ -31,6 +34,9 @@
 body.night {
   --fg: #b8604f; --muted: #8a4a3f; --faint: #5e3027;
   --accent: #c0644f; --sun: #a8574a; --sat: #7a4a44;
+  /* 夜は眩しくないよう暗めにする（色の違いは残す） */
+  --wx-sun: #a8683a; --wx-moon: #9a8a5c; --wx-cloud: #74695f; --wx-rain: #4f6f92;
+  --wx-snow: #8296a6; --wx-fog: #5e5650; --wx-bolt: #a68c3a;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -65,7 +71,8 @@ body {
 #cCal { grid-area: cal; }
 
 .date { font-size: calc(9.5vmin * var(--s)); color: var(--fg); font-weight: 700; letter-spacing: .02em; white-space: nowrap; line-height: 1.1; }
-.date b { color: var(--accent); font-weight: 700; }
+.date b { color: var(--fg); font-weight: 700; }
+.date .sun { color: var(--sun); } .date .sat { color: var(--sat); }
 .clock { font-size: calc(33vmin * var(--s)); font-weight: 500; line-height: .9; letter-spacing: -.02em; white-space: nowrap; margin-left: -.06em; margin-right: -.03em; }
 /* 測る範囲を行の高さにそろえる（文字の上下の余白で「はみ出し」と誤判定しない） */
 #date, .clock > span { display: inline-block; }
@@ -109,7 +116,9 @@ body {
 .grid .out { visibility: hidden; }
 .grid .sun, .grid .hol { color: var(--sun); }
 .grid .sat { color: var(--sat); }
-.grid .today { background: var(--accent); color: var(--bg); font-weight: 800; }
+.grid .today { background: var(--fg); color: var(--bg); font-weight: 800; }
+.grid .today.sun, .grid .today.hol { background: var(--sun); color: var(--bg); }
+.grid .today.sat { background: var(--sat); color: var(--bg); }
 .holiday { white-space: nowrap; line-height: 1.2; font-size: calc(3.3vmin * var(--g)); color: var(--muted); }
 .holiday b { color: var(--fg); font-weight: 700; }
 
@@ -213,7 +222,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08l";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-08m";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -596,7 +605,8 @@ function tick() {
 }
 function onMinute(now) {
   const key = ymd(now), hol = HOLIDAYS[key];
-  $("date").innerHTML = `${now.getMonth()+1}月${now.getDate()}日 <b>${DOW[now.getDay()]}曜日</b>${hol ? `　${hol}` : ""}`;
+  const dc = hol || now.getDay() === 0 ? "sun" : now.getDay() === 6 ? "sat" : "";   // 土＝青、日・祝＝赤、平日＝白
+  $("date").innerHTML = `${now.getMonth()+1}月${now.getDate()}日 <b class="${dc}">${DOW[now.getDay()]}曜日</b>${hol ? `　<span class="sun">${hol}</span>` : ""}`;
   const h = now.getHours();
   document.body.classList.toggle("night", h >= NIGHT_FROM || h < NIGHT_TO);
   const hourChanged = now.getMinutes() === 0;   // 時の桁数が変わると幅が変わるので並べ直す
@@ -655,20 +665,23 @@ function wxInfo(code) {
   if (code >= 95) return ["雷雨", "thunder"];
   return ["―", "cloud"];
 }
+// 天気の種類 → 文字に使う色
+const WX_COLOR = { sun: "sun", partly: "sun", cloud: "cloud", fog: "fog", rain: "rain", snow: "snow", thunder: "bolt" };
 function icon(kind, night) {
-  const s = `fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"`;
+  // 部品ごとに色を変える（太陽・月・雲・雨粒・雪・霧・稲妻）
+  const s = c => `fill="none" style="stroke:var(--wx-${c})" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"`;
   const sun = night
-    ? `<path d="M30 10a14 14 0 1 0 14 18A11 11 0 0 1 30 10z" ${s}/>`
-    : `<circle cx="32" cy="24" r="9" ${s}/><g ${s}><path d="M32 6v4M32 38v4M14 24h4M46 24h4M19 11l3 3M42 34l3 3M45 11l-3 3M22 34l-3 3"/></g>`;
-  const cloud = `<path d="M18 46h28a9 9 0 0 0 0-18 13 13 0 0 0-25-2 10 10 0 0 0-3 20z" ${s}/>`;
-  const small = `<path d="M18 40h28a9 9 0 0 0 0-18 13 13 0 0 0-25-2 10 10 0 0 0-3 14z" ${s}/>`;
+    ? `<path d="M30 10a14 14 0 1 0 14 18A11 11 0 0 1 30 10z" ${s("moon")}/>`
+    : `<circle cx="32" cy="24" r="9" ${s("sun")}/><g ${s("sun")}><path d="M32 6v4M32 38v4M14 24h4M46 24h4M19 11l3 3M42 34l3 3M45 11l-3 3M22 34l-3 3"/></g>`;
+  const cloud = `<path d="M18 46h28a9 9 0 0 0 0-18 13 13 0 0 0-25-2 10 10 0 0 0-3 20z" ${s("cloud")}/>`;
+  const small = `<path d="M18 40h28a9 9 0 0 0 0-18 13 13 0 0 0-25-2 10 10 0 0 0-3 14z" ${s("cloud")}/>`;
   const map = {
     sun, cloud,
     partly: `<g transform="translate(-6,-6) scale(.8)">${sun}</g>${cloud}`,
-    fog: `<g ${s}><path d="M12 24h40M8 32h44M14 40h36M18 48h28"/></g>`,
-    rain: `${small}<g ${s}><path d="M24 48l-2 6M33 48l-2 6M42 48l-2 6"/></g>`,
-    snow: `${small}<g ${s}><path d="M24 50v4M22 52h4M34 50v4M32 52h4M44 50v4M42 52h4"/></g>`,
-    thunder: `${small}<path d="M34 42l-5 8h6l-4 8" ${s}/>`
+    fog: `<g ${s("fog")}><path d="M12 24h40M8 32h44M14 40h36M18 48h28"/></g>`,
+    rain: `${small}<g ${s("rain")}><path d="M24 48l-2 6M33 48l-2 6M42 48l-2 6"/></g>`,
+    snow: `${small}<g ${s("snow")}><path d="M24 50v4M22 52h4M34 50v4M32 52h4M44 50v4M42 52h4"/></g>`,
+    thunder: `${small}<path d="M34 42l-5 8h6l-4 8" ${s("bolt")}/>`
   };
   return `<svg viewBox="0 0 64 64" aria-hidden="true">${map[kind] || cloud}</svg>`;
 }
@@ -686,7 +699,8 @@ async function loadWeather() {
     const [label, kind] = wxInfo(c.weather_code);
     $("wxIcon").innerHTML = icon(kind, c.is_day === 0);
     $("wxTemp").innerHTML = `${Math.round(c.temperature_2m)}<small>℃</small>`;
-    $("wxCond").textContent = `${PLACE.name} ${label}`;
+    const wc = kind === "sun" && c.is_day === 0 ? "moon" : (WX_COLOR[kind] || "cloud");   // 夜の晴れは月の色
+    $("wxCond").innerHTML = `${PLACE.name} <span style="color:var(--wx-${wc})">${label}</span>`;
     $("wxSub").innerHTML =
       `<span class="nw">最高 <span class="hi">${Math.round(dl.temperature_2m_max[0])}°</span>　最低 <span class="lo">${Math.round(dl.temperature_2m_min[0])}°</span></span><br><span class="nw">降水確率 ${dl.precipitation_probability_max[0] ?? "-"}%</span>`;
     const nowH = new Date(); nowH.setMinutes(0, 0, 0);
