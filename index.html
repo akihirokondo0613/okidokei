@@ -124,6 +124,10 @@ body {
 .grid .today.sat { background: var(--sat); color: var(--bg); }
 .holiday { white-space: nowrap; line-height: 1.2; font-size: calc(3.3vmin * var(--g)); color: var(--muted); }
 .holiday b { color: var(--fg); font-weight: 700; }
+.holiday .pay b { color: var(--accent); }
+/* 給料日：日付を金色の輪で囲む */
+.grid .payday { box-shadow: inset 0 0 0 calc(.45vmin * var(--s)) var(--accent); }
+.grid .today.payday { box-shadow: inset 0 0 0 calc(.45vmin * var(--s)) var(--accent), 0 0 0 calc(.45vmin * var(--s)) var(--accent); }
 
 /* 操作バー（画面をタップしたときだけ出す） */
 .bar {
@@ -199,6 +203,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
     <div class="cal-head"><span class="m" id="calM"></span><span class="y" id="calY"></span></div>
     <div class="grid" id="grid"></div>
     <div class="holiday"><span id="holiday"></span></div>
+    <div class="holiday pay"><span id="payday"></span></div>
   </section>
 </main>
 
@@ -225,7 +230,7 @@ body.night .halo { --h: 192, 100, 79; --ha: .55; }
 
 <script>
 // ===== 設定 =====
-const VERSION = "2026-11-08o";   // 直したらここと version.txt を同じ値にする
+const VERSION = "2026-11-09a";   // 直したらここと version.txt を同じ値にする
 const PLACE = { name: "富山市", lat: 36.6953, lon: 137.2113 };
 const NIGHT_FROM = 22, NIGHT_TO = 6;
 const WEATHER_EVERY_MIN = 15;
@@ -387,7 +392,7 @@ const PREF = {
   cCal: [["center","start"],["center","end"],["center","center"], ...ALIGNS]
 };
 // 測る対象（各ブロックの中だけを探す。予報は配置によって別ブロックへ移る）
-const MEASURE = "#date, #clock > span, #wxIcon svg, #wxTemp, #wxCond, #wxSub .nw, #hours > div, #stamp, #calM, #calY, #grid > div:not(.out), #holiday";
+const MEASURE = "#date, #clock > span, #wxIcon svg, #wxTemp, #wxCond, #wxSub .nw, #hours > div, #stamp, #calM, #calY, #grid > div:not(.out), #holiday, #payday";
 const CELLS = { cDate: 1, cClock: 1, cWx: 1, cHrs: 1, cCal: 1 };
 const items = id => $(id).querySelectorAll(MEASURE);
 // 要素の見えている範囲。時計の数字は字の両脇の空きを除く（CSSで左右に寄せている分を戻す）
@@ -619,11 +624,18 @@ function onMinute(now) {
 }
 
 // ===== カレンダー =====
+// 給料日：原則10日。土日祝日に当たるときは、その前の営業日
+function payday(y, m) {
+  const dt = new Date(y, m, 10);
+  while (dt.getDay() === 0 || dt.getDay() === 6 || HOLIDAYS[ymd(dt)]) dt.setDate(dt.getDate() - 1);
+  return dt;
+}
 function renderCalendar(now) {
   const y = now.getFullYear(), m = now.getMonth();
   $("calM").textContent = `${m+1}月`;
   $("calY").textContent = `${y}年（令和${y - 2018}年）`;
   const first = new Date(y, m, 1), days = new Date(y, m+1, 0).getDate();
+  const payD = payday(y, m).getDate();
   // 月曜始まり（月〜日）
   const order = [1, 2, 3, 4, 5, 6, 0];
   let html = order.map(i => `<div class="dow ${i===0?"sun":i===6?"sat":""}">${DOW[i]}</div>`).join("");
@@ -633,6 +645,7 @@ function renderCalendar(now) {
     if (wd === 0) cls.push("sun"); if (wd === 6) cls.push("sat");
     if (HOLIDAYS[k]) cls.push("hol");
     if (d === now.getDate()) cls.push("today");
+    if (d === payD) cls.push("payday");
     html += `<div class="${cls.join(" ")}">${d}</div>`;
   }
   $("grid").innerHTML = html;
@@ -643,6 +656,13 @@ function renderCalendar(now) {
     const diff = Math.round((nd - new Date(y, m, now.getDate())) / 86400000);
     $("holiday").innerHTML = `次の祝日 <b>${nd.getMonth()+1}/${nd.getDate()}（${DOW[nd.getDay()]}）${HOLIDAYS[next]}</b> あと${diff}日`;
   } else $("holiday").textContent = "";
+  const t0 = new Date(y, m, now.getDate());
+  let pd = payday(y, m);
+  if (pd < t0) pd = payday(y, m + 1);
+  const pdiff = Math.round((pd - t0) / 86400000);
+  $("payday").innerHTML = pdiff === 0
+    ? `今日は <b>給料日</b>`
+    : `次の給料日 <b>${pd.getMonth()+1}/${pd.getDate()}（${DOW[pd.getDay()]}）</b> あと${pdiff}日`;
 }
 async function loadHolidays() {
   try {
